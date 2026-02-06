@@ -11,11 +11,16 @@ import os
 app = Flask(__name__, static_folder='static')
 app.config['SECRET_KEY'] = 'sanguosha_secret_key'
 
-# 根据环境配置SocketIO
-if os.environ.get('FLASK_ENV') == 'production':
-    socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=True)
-else:
-    socketio = SocketIO(app, cors_allowed_origins="*")
+# 配置SocketIO以兼容云环境
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*",
+    logger=True, 
+    engineio_logger=True,
+    cors_credentials=True,
+    ping_timeout=60,
+    ping_interval=25
+)
 
 # 游戏房间存储
 rooms = {}
