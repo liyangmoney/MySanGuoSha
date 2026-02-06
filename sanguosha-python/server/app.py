@@ -128,4 +128,7 @@ def handle_disconnect():
     print(f'客户端断开: {request.sid}')
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    # 从环境变量获取端口，否则默认使用5000
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
