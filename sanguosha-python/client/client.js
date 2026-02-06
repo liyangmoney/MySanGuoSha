@@ -178,5 +178,11 @@ const sgsClient = new SanGuoShaClient();
 // 初始化
 sgsClient.connect();
 
-// 导出给全局使用
+// 确保全局可用
 window.SanGuoShaClient = sgsClient;
+window.sgsClient = sgsClient;
+
+// 保持向后兼容性
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = SanGuoShaClient;
+}
