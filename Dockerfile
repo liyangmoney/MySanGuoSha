@@ -11,10 +11,14 @@ COPY sanguosha-python/server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制项目源代码
-COPY sanguosha-python/ ./sanguosha-python/
+COPY . .
+
+# 设置环境变量
+ENV PYTHONPATH=/app
 
 # 暴露端口
 EXPOSE 5000
 
-# 启动命令
-CMD ["python", "./sanguosha-python/server/app.py"]
+# 启动命令 - 切换到正确的目录
+WORKDIR /app/sanguosha-python/server
+CMD ["python", "app.py"]

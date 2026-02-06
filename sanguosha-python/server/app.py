@@ -9,10 +9,11 @@ from flask import Flask, request, jsonify, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import sys
 import os
+
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.abspath('.'))
 
-# 导入游戏模块
+# 导入游戏模块 - 使用相对路径
 from game import SanGuoShaGame
 from game.player import Player
 from characters import ExampleCharacter
