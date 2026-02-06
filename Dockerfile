@@ -24,5 +24,5 @@ ENV PYTHONPATH=/app:/app/sanguosha-python
 # 暴露端口
 EXPOSE 5000
 
-# 启动命令 - 使用绝对路径
+# 启动命令 - 直接运行app.py，利用内置的eventlet支持
 CMD ["python", "/app/sanguosha-python/server/app.py"]
