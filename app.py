@@ -1,50 +1,43 @@
 """
-三国杀游戏服务器 - 云部署优化版
+简化版三国杀服务器
 """
-import os
-import sys
 import json
 import uuid
 from datetime import datetime
-
-# 添加当前目录到Python路径
-sys.path.insert(0, os.path.abspath('.'))
-sys.path.insert(0, os.path.join(os.path.abspath('.'), 'sanguosha_server'))
-
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
+import os
 
-# 从正确的路径导入游戏模块
-from sanguosha_server.game import SanGuoShaGame
-from sanguosha_server.game.player import Player
-from sanguosha_server.characters import ExampleCharacter
-from sanguosha_server.cards.basic_cards import Sha, Shan, Tao
-
-app = Flask(__name__, static_folder='sanguosha_server/client')
+app = Flask(__name__, static_folder='static')
 app.config['SECRET_KEY'] = 'sanguosha_secret_key'
-socketio = SocketIO(app, cors_allowed_origins="*")
+
+# 根据环境配置SocketIO
+if os.environ.get('FLASK_ENV') == 'production':
+    socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=True)
+else:
+    socketio = SocketIO(app, cors_allowed_origins="*")
 
 # 游戏房间存储
 rooms = {}
 
 @app.route('/')
 def index():
-    return send_from_directory('sanguosha_server/client', 'index.html')
+    return send_from_directory('static', 'index.html')
 
-@app.route('/client.js')
-def client_js():
-    return send_from_directory('sanguosha_server/client', 'client.js')
+@app.route('/<path:path>')
+def static_files(path):
+    return send_from_directory('static', path)
 
 @app.route('/api/create_room', methods=['POST'])
 def create_room():
     """创建游戏房间"""
     try:
+        data = request.json
         room_id = str(uuid.uuid4())
-        max_players = request.json.get('max_players', 2)
+        max_players = data.get('max_players', 2)
         
         rooms[room_id] = {
             'id': room_id,
-            'game': SanGuoShaGame(),
             'players': [],
             'max_players': max_players,
             'status': 'waiting'  # waiting, running, finished
@@ -55,7 +48,6 @@ def create_room():
             'room_id': room_id
         })
     except Exception as e:
-        print(f"Error creating room: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/join_room/<room_id>', methods=['POST'])
@@ -78,22 +70,24 @@ def join_room_api(room_id):
         
         # 检查玩家名称是否已存在
         for player in room['players']:
-            if player.name == player_name:
+            if player['name'] == player_name:
                 return jsonify({'success': False, 'error': '该玩家名称已被使用'})
         
-        # 创建玩家
-        player = Player(player_name)
-        player.character = ExampleCharacter()
-        player.hp = player.character.hp
-        player.max_hp = player.character.max_hp
+        # 创建玩家数据
+        player_data = {
+            'name': player_name,
+            'id': len(room['players']),
+            'hp': 3,  # 默认血量
+            'max_hp': 3,
+            'character': '示例武将'  # 默认武将
+        }
         
-        room['players'].append(player)
-        room['game'].add_player(player)
+        room['players'].append(player_data)
         
         # 通知房间内所有玩家有新玩家加入
         socketio.emit('player_joined', {
             'player_name': player_name,
-            'players': [p.name for p in room['players']],
+            'players': [p['name'] for p in room['players']],
             'room_id': room_id
         }, room=room_id)
         
@@ -101,7 +95,7 @@ def join_room_api(room_id):
         if len(room['players']) == room['max_players']:
             room['status'] = 'running'
             socketio.emit('game_start', {
-                'players': [p.name for p in room['players']], 
+                'players': [p['name'] for p in room['players']], 
                 'room_id': room_id
             }, room=room_id)
         
@@ -110,13 +104,12 @@ def join_room_api(room_id):
             'player_id': len(room['players']) - 1,
             'room_info': {
                 'room_id': room_id,
-                'players': [p.name for p in room['players']],
+                'players': [p['name'] for p in room['players']],
                 'max_players': room['max_players'],
                 'status': room['status']
             }
         })
     except Exception as e:
-        print(f"Error joining room: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/rooms/<room_id>')
@@ -131,13 +124,12 @@ def get_room_info(room_id):
             'success': True,
             'room_info': {
                 'room_id': room_id,
-                'players': [p.name for p in room['players']],
+                'players': [p['name'] for p in room['players']],
                 'max_players': room['max_players'],
                 'status': room['status']
             }
         })
     except Exception as e:
-        print(f"Error getting room info: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @socketio.on('connect')
