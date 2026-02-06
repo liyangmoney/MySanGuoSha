@@ -431,20 +431,21 @@
             });
             
             socket.on('player_joined', (data) => {
+                // 更新玩家列表
                 updatePlayerList(data.players);
                 document.getElementById('room-status').textContent = data.players.length === 2 ? '等待准备' : '等待中';
                 addLogEntry(`${data.player_name} 加入了房间`);
                 
-                // 无论何时都有玩家加入，都检查是否显示准备区域
                 // 确保准备区域对所有玩家可见
-                setTimeout(() => {
-                    document.getElementById('ready-section').classList.remove('hidden');
-                }, 500); // 延迟一下确保DOM已更新
+                document.getElementById('ready-section').classList.remove('hidden');
                 
                 if (data.players.length === 2) {
                     document.getElementById('room-status').textContent = '等待准备';
                     addLogEntry('房间已满，请各位玩家准备');
                 }
+                
+                // 更新玩家列表以显示准备状态
+                updatePlayerListWithReadyStatus();
             });
             
             // 监听所有玩家加入事件
@@ -526,13 +527,46 @@
         }
         
         // 更新玩家列表
-        function updatePlayerList(playerNames) {
+        async function updatePlayerList(playerNames) {
             const playerListEl = document.getElementById('player-list');
             if (!playerListEl) return;
             
-            playerListEl.innerHTML = playerNames.map(p => 
-                `<div class="player-item">${p}</div>`
-            ).join('');
+            // 尝试获取完整的房间信息以获取准备状态
+            if (currentRoomId) {
+                try {
+                    const fullResponse = await fetch(`/api/full_room_info/${currentRoomId}`);
+                    if (fullResponse.ok) {
+                        const fullData = await fullResponse.json();
+                        if (fullData.success && fullData.players) {
+                            playerListEl.innerHTML = fullData.players.map(player => {
+                                const readyStatus = player.is_ready ? ' [已准备]' : ' [未准备]';
+                                return `<div class="player-item">${player.name}${readyStatus}</div>`;
+                            }).join('');
+                        } else {
+                            // 如果无法获取详细信息，使用简单列表
+                            playerListEl.innerHTML = playerNames.map(p => 
+                                `<div class="player-item">${p}</div>`
+                            ).join('');
+                        }
+                    } else {
+                        // 如果请求失败，使用简单列表
+                        playerListEl.innerHTML = playerNames.map(p => 
+                            `<div class="player-item">${p}</div>`
+                        ).join('');
+                    }
+                } catch (error) {
+                    console.error('Error fetching room info:', error);
+                    // 如果出错，使用简单列表
+                    playerListEl.innerHTML = playerNames.map(p => 
+                        `<div class="player-item">${p}</div>`
+                    ).join('');
+                }
+            } else {
+                // 如果没有房间ID，使用简单列表
+                playerListEl.innerHTML = playerNames.map(p => 
+                    `<div class="player-item">${p}</div>`
+                ).join('');
+            }
             
             players = playerNames;
         }

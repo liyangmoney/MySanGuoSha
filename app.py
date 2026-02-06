@@ -168,15 +168,8 @@ def join_room_api(room_id):
         
         room['players'].append(player_data)
         
-        # 通知房间内所有玩家有新玩家加入
-        socketio.emit('player_joined', {
-            'player_name': player_name,
-            'players': [p['name'] for p in room['players']],
-            'room_id': room_id
-        }, room=room_id)
-        
         # 不再自动开始游戏，改为等待玩家准备
-        # 通知新加入的玩家房间状态
+        # 通知房间内所有玩家有新玩家加入
         socketio.emit('player_joined', {
             'player_name': player_name,
             'players': [p['name'] for p in room['players']],
