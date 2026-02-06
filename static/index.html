@@ -174,6 +174,15 @@
                     <h4>玩家列表</h4>
                     <div id="player-list" class="player-list"></div>
                     
+                    <div id="ready-section" class="hidden">
+                        <button id="ready-btn">准备</button>
+                        <button id="unready-btn" class="hidden">取消准备</button>
+                    </div>
+                    
+                    <div id="start-game-section" class="hidden">
+                        <button id="start-game-btn">开始游戏 (房主)</button>
+                    </div>
+                    
                     <div class="btn-group">
                         <button id="copy-btn">复制房间ID</button>
                         <button id="leave-btn">离开房间</button>
@@ -273,7 +282,11 @@
                     const alivePlayers = data.players.filter(p => p.name !== playerName && p.is_alive !== false);
                     const opponentsHtml = alivePlayers.map(p => `
                         <div class="player-item">
-                            ${p.name} (${p.character}) - HP: ${p.hp}/${p.max_hp} - 手牌: ${p.hand_card_count}张
+                            <img src="/images/${getCharacterImage(p.character)}" alt="${p.character}" style="width: 60px; height: 75px; float: left; margin-right: 10px;">
+                            <div>
+                                ${p.name} (${p.character})<br>
+                                HP: ${p.hp}/${p.max_hp} - 手牌: ${p.hand_card_count}张
+                            </div>
                         </div>
                     `).join('');
                     opponentsDisplay.innerHTML = opponentsHtml || '<p>暂无对手</p>';
@@ -293,13 +306,30 @@
             
             socket.on('player_joined', (data) => {
                 updatePlayerList(data.players);
-                document.getElementById('room-status').textContent = data.players.length === 2 ? '准备开始' : '等待中';
+                document.getElementById('room-status').textContent = data.players.length === 2 ? '等待准备' : '等待中';
                 addLogEntry(`${data.player_name} 加入了房间`);
                 
                 if (data.players.length === 2) {
-                    document.getElementById('room-status').textContent = '准备开始';
-                    addLogEntry('房间已满，准备开始游戏');
+                    document.getElementById('room-status').textContent = '等待准备';
+                    document.getElementById('ready-section').classList.remove('hidden');
+                    addLogEntry('房间已满，请各位玩家准备');
                 }
+            });
+            
+            // 监听所有玩家加入事件
+            socket.on('all_players_joined', (data) => {
+                document.getElementById('room-status').textContent = '等待准备';
+                document.getElementById('ready-section').classList.remove('hidden');
+                addLogEntry('所有玩家已加入，请准备开始游戏');
+            });
+            
+            // 监听玩家准备状态变更事件
+            socket.on('player_ready_status_changed', (data) => {
+                updatePlayerListWithReadyStatus(data.players || []);
+                addLogEntry(`${data.player_name} 已${data.is_ready ? '准备' : '取消准备'}`);
+                
+                // 检查是否所有玩家都准备好了
+                // 在实际应用中，这里应该更新UI显示准备状态
             });
             
             socket.on('joined_room', (data) => {
@@ -369,6 +399,29 @@
             ).join('');
             
             players = playerNames;
+        }
+        
+        // 更新玩家列表（包含准备状态）
+        function updatePlayerListWithReadyStatus() {
+            // 这个函数会在获取房间信息后调用
+            if (currentRoomId) {
+                fetch(`/api/rooms/${currentRoomId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const roomInfo = data.room_info;
+                            const playerListEl = document.getElementById('player-list');
+                            if (playerListEl) {
+                                playerListEl.innerHTML = roomInfo.players.map(pName => {
+                                    // 在实际游戏中，我们需要获取每个玩家的准备状态
+                                    // 这里暂时显示占位符，稍后通过其他方式更新
+                                    return `<div class="player-item">${pName}</div>`;
+                                }).join('');
+                            }
+                        }
+                    })
+                    .catch(error => console.error('Error fetching room info:', error));
+            }
         }
         
         // 加入或创建房间
@@ -491,6 +544,70 @@
             }
         }
         
+        // 设置准备状态
+        async function setReady(isReady = true) {
+            if (!currentRoomId || !playerName) {
+                alert('请先加入房间');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/set_ready/${currentRoomId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        player_name: playerName,
+                        is_ready: isReady
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    // 更新按钮状态
+                    document.getElementById('ready-btn').classList.toggle('hidden', isReady);
+                    document.getElementById('unready-btn').classList.toggle('hidden', !isReady);
+                    addLogEntry(`你已${isReady ? '准备' : '取消准备'}`);
+                } else {
+                    alert('设置准备状态失败: ' + data.error);
+                }
+            } catch (error) {
+                alert('网络错误: ' + error.message);
+            }
+        }
+        
+        // 开始游戏（房主功能）
+        async function startGame() {
+            if (!currentRoomId || !playerName) {
+                alert('请先加入房间');
+                return;
+            }
+            
+            // 检查是否是房主（第一个加入房间的玩家）
+            try {
+                const response = await fetch(`/api/rooms/${currentRoomId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const roomInfo = data.room_info;
+                    const firstPlayer = roomInfo.players[0];
+                    
+                    if (playerName !== firstPlayer) {
+                        alert('只有房主可以开始游戏');
+                        return;
+                    }
+                    
+                    // 尝试将所有玩家设为准备状态（如果还没准备的话）
+                    // 实际上，开始游戏是由所有玩家都准备后自动触发的
+                    // 这里只是触发检测
+                    setReady(true); // 确保房主已准备
+                }
+            } catch (error) {
+                console.error('Error checking room owner:', error);
+            }
+        }
+        
         // 离开房间
         function leaveRoom() {
             if (currentRoomId && socket) {
@@ -565,6 +682,24 @@
             sendGameAction('end_turn');
         }
         
+        // 获取武将图片文件名
+        function getCharacterImage(characterName) {
+            const charMap = {
+                '刘备': 'liubei.jpg',
+                '关羽': 'guanyu.jpg',
+                '张飞': 'zhangfei.jpg',
+                '诸葛亮': 'zhugeliang.jpg',
+                '赵云': 'zhaoyun.jpg',
+                '马超': 'machao.jpg',
+                '黄月英': 'huangyueying.jpg',
+                '曹操': 'caocao.jpg',
+                '司马懿': 'simayi.jpg',
+                '夏侯惇': 'xiahou_dun.jpg'
+            };
+            
+            return charMap[characterName] || 'liubei.jpg'; // 默认图片
+        }
+
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
             // 初始化Socket.IO
@@ -576,6 +711,9 @@
             document.getElementById('leave-btn').addEventListener('click', leaveRoom);
             document.getElementById('draw-card-btn').addEventListener('click', drawCards);
             document.getElementById('end-turn-btn').addEventListener('click', endTurn);
+            document.getElementById('ready-btn').addEventListener('click', () => setReady(true));
+            document.getElementById('unready-btn').addEventListener('click', () => setReady(false));
+            document.getElementById('start-game-btn').addEventListener('click', startGame);
             
             updateStatus('准备就绪，可以加入游戏');
             addLogEntry('欢迎来到三国杀Online');

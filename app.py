@@ -39,16 +39,16 @@ CARDS = [
 
 # 武将定义
 CHARACTERS = [
-    {'name': '刘备', 'hp': 4, 'skills': ['仁德']},
-    {'name': '关羽', 'hp': 4, 'skills': ['武圣']},
-    {'name': '张飞', 'hp': 4, 'skills': ['咆哮']},
-    {'name': '诸葛亮', 'hp': 3, 'skills': ['观星', '空城']},
-    {'name': '赵云', 'hp': 4, 'skills': ['龙胆']},
-    {'name': '马超', 'hp': 4, 'skills': ['铁骑']},
-    {'name': '黄月英', 'hp': 3, 'skills': ['集智', '奇才']},
-    {'name': '曹操', 'hp': 4, 'skills': ['奸雄', '护驾']},
-    {'name': '司马懿', 'hp': 3, 'skills': ['反馈', '鬼才']},
-    {'name': '夏侯惇', 'hp': 4, 'skills': ['刚烈']},
+    {'name': '刘备', 'hp': 4, 'skills': ['仁德'], 'image': 'liubei.jpg'},
+    {'name': '关羽', 'hp': 4, 'skills': ['武圣'], 'image': 'guanyu.jpg'},
+    {'name': '张飞', 'hp': 4, 'skills': ['咆哮'], 'image': 'zhangfei.jpg'},
+    {'name': '诸葛亮', 'hp': 3, 'skills': ['观星', '空城'], 'image': 'zhugeliang.jpg'},
+    {'name': '赵云', 'hp': 4, 'skills': ['龙胆'], 'image': 'zhaoyun.jpg'},
+    {'name': '马超', 'hp': 4, 'skills': ['铁骑'], 'image': 'machao.jpg'},
+    {'name': '黄月英', 'hp': 3, 'skills': ['集智', '奇才'], 'image': 'huangyueying.jpg'},
+    {'name': '曹操', 'hp': 4, 'skills': ['奸雄', '护驾'], 'image': 'caocao.jpg'},
+    {'name': '司马懿', 'hp': 3, 'skills': ['反馈', '鬼才'], 'image': 'simayi.jpg'},
+    {'name': '夏侯惇', 'hp': 4, 'skills': ['刚烈'], 'image': 'xiahou_dun.jpg'},
 ]
 
 # 游戏房间存储
@@ -61,6 +61,10 @@ def index():
 @app.route('/<path:path>')
 def static_files(path):
     return send_from_directory('static', path)
+
+@app.route('/images/<path:filename>')
+def images(filename):
+    return send_from_directory('static/images', filename)
 
 @app.route('/api/create_room', methods=['POST'])
 def create_room():
@@ -158,7 +162,8 @@ def join_room_api(room_id):
             'character': '示例武将',
             'hand_cards': [],
             'equipped_cards': [],  # 装备区
-            'is_alive': True
+            'is_alive': True,
+            'is_ready': False  # 新增：准备状态
         }
         
         room['players'].append(player_data)
@@ -170,20 +175,12 @@ def join_room_api(room_id):
             'room_id': room_id
         }, room=room_id)
         
-        # 如果达到最大玩家数，自动开始游戏
+        # 不再自动开始游戏，改为等待玩家准备
+        # 如果达到最大玩家数，通知可以准备了
         if len(room['players']) == room['max_players']:
-            room['status'] = 'running'
-            initialize_game(room_id)  # 初始化游戏
-            socketio.emit('game_start', {
-                'players': [{
-                    'name': p['name'],
-                    'character': p['character'], 
-                    'hp': p['hp'],
-                    'max_hp': p['max_hp'],
-                    'hand_card_count': len(p['hand_cards'])
-                } for p in room['players']], 
-                'room_id': room_id,
-                'current_player': room['players'][room['current_player_index']]['name']
+            socketio.emit('all_players_joined', {
+                'players': [p['name'] for p in room['players']],
+                'room_id': room_id
             }, room=room_id)
         
         return jsonify({
@@ -392,6 +389,77 @@ def get_game_state(room_id):
         return jsonify({
             'success': True,
             'game_state': game_state
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@socketio.on('connect')
+def handle_connect():
+    print(f'客户端连接: {request.sid}')
+    emit('connected', {'msg': 'Connected to server'})
+
+@socketio.on('join_game')
+def handle_join_game(data):
+    """处理玩家加入游戏"""
+    room_id = data['room_id']
+    join_room(room_id)
+    emit('joined_room', {'msg': f'加入了房间 {room_id}'})
+
+@app.route('/api/set_ready/<room_id>', methods=['POST'])
+def set_player_ready(room_id):
+    """设置玩家准备状态"""
+    try:
+        if room_id not in rooms:
+            return jsonify({'success': False, 'error': '房间不存在'})
+        
+        room = rooms[room_id]
+        if room['status'] != 'waiting':
+            return jsonify({'success': False, 'error': '游戏已经开始'})
+        
+        player_name = request.json.get('player_name')
+        is_ready = request.json.get('is_ready', True)
+        
+        # 找到玩家并设置准备状态
+        player = None
+        for p in room['players']:
+            if p['name'] == player_name:
+                p['is_ready'] = is_ready
+                player = p
+                break
+        
+        if not player:
+            return jsonify({'success': False, 'error': '玩家不存在'})
+        
+        # 广播准备状态变更
+        socketio.emit('player_ready_status_changed', {
+            'player_name': player_name,
+            'is_ready': is_ready,
+            'room_id': room_id
+        }, room=room_id)
+        
+        # 检查是否所有玩家都准备好了
+        all_ready = all(p['is_ready'] for p in room['players'])
+        if all_ready and len(room['players']) == room['max_players']:
+            # 所有玩家都准备好了，开始游戏
+            room['status'] = 'running'
+            initialize_game(room_id)
+            socketio.emit('game_start', {
+                'players': [{
+                    'name': p['name'],
+                    'character': p['character'], 
+                    'hp': p['hp'],
+                    'max_hp': p['max_hp'],
+                    'hand_card_count': len(p['hand_cards']),
+                    'is_alive': p['is_alive']
+                } for p in room['players']], 
+                'room_id': room_id,
+                'current_player': room['players'][room['current_player_index']]['name']
+            }, room=room_id)
+        
+        return jsonify({
+            'success': True,
+            'player_name': player_name,
+            'is_ready': is_ready
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
