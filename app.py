@@ -176,6 +176,13 @@ def join_room_api(room_id):
         }, room=room_id)
         
         # 不再自动开始游戏，改为等待玩家准备
+        # 通知新加入的玩家房间状态
+        socketio.emit('player_joined', {
+            'player_name': player_name,
+            'players': [p['name'] for p in room['players']],
+            'room_id': room_id
+        }, room=room_id)
+        
         # 如果达到最大玩家数，通知可以准备了
         if len(room['players']) == room['max_players']:
             socketio.emit('all_players_joined', {
@@ -404,6 +411,24 @@ def handle_join_game(data):
     room_id = data['room_id']
     join_room(room_id)
     emit('joined_room', {'msg': f'加入了房间 {room_id}'})
+
+@app.route('/api/full_room_info/<room_id>')
+def get_full_room_info(room_id):
+    """获取完整房间信息，包括玩家准备状态"""
+    try:
+        if room_id not in rooms:
+            return jsonify({'success': False, 'error': '房间不存在'})
+        
+        room = rooms[room_id]
+        return jsonify({
+            'success': True,
+            'room_id': room_id,
+            'players': room['players'],  # 包含玩家的所有信息，包括准备状态
+            'status': room['status'],
+            'max_players': room['max_players']
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/set_ready/<room_id>', methods=['POST'])
 def set_player_ready(room_id):
