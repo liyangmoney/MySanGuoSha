@@ -8,17 +8,33 @@ from datetime import datetime
 import sys
 import os
 
-# 添加项目根目录到Python路径
-sys.path.insert(0, os.path.abspath('.'))
-
 from flask import Flask, request, jsonify, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
-# 导入游戏模块
-from sanguosha_python.game import SanGuoShaGame
-from sanguosha_python.game.player import Player
-from sanguosha_python.characters import ExampleCharacter
-from sanguosha_python.cards.basic_cards import Sha, Shan, Tao
+# 添加项目根目录到Python路径
+import sys
+import os
+sys.path.insert(0, os.path.abspath('.'))
+sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../..'))
+
+# 导入游戏模块 - 尝试多种可能的路径
+try:
+    from game import SanGuoShaGame
+    from game.player import Player
+    from characters import ExampleCharacter
+    from cards.basic_cards import Sha, Shan, Tao
+except ImportError:
+    try:
+        from sanguosha_python.game import SanGuoShaGame
+        from sanguosha_python.game.player import Player
+        from sanguosha_python.characters import ExampleCharacter
+        from sanguosha_python.cards.basic_cards import Sha, Shan, Tao
+    except ImportError:
+        from ..game import SanGuoShaGame
+        from ..game.player import Player
+        from ..characters import ExampleCharacter
+        from ..cards.basic_cards import Sha, Shan, Tao
 
 app = Flask(__name__, static_folder='../client')
 app.config['SECRET_KEY'] = 'sanguosha_secret_key'
