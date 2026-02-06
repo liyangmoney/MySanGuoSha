@@ -212,186 +212,307 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <script src="client.js"></script>
     <script>
-        // 全局变量
-        let currentRoomId = null;
-        let playerName = null;
-        let players = [];
-        
-        // 更新状态文本
-        function updateStatus(text) {
-            document.getElementById('status-text').textContent = text;
-        }
-        
-        // 添加日志条目
-        function addLogEntry(message) {
-            const logContent = document.getElementById('log-content');
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            logContent.appendChild(logEntry);
+        // 确保在DOM加载完成后再执行
+        document.addEventListener('DOMContentLoaded', function() {
+            // 全局变量
+            let currentRoomId = null;
+            let playerName = null;
+            let players = [];
             
-            // 自动滚动到底部
-            logContent.scrollTop = logContent.scrollHeight;
-        }
-        
-        // 更新玩家列表
-        function updatePlayerList(playerNames) {
-            const playerListEl = document.getElementById('player-list');
-            playerListEl.innerHTML = playerNames.map(p => 
-                `<div class="player-item">${p}</div>`
-            ).join('');
-            
-            players = playerNames;
-        }
-        
-        // 加入或创建房间
-        async function joinOrCreateRoom() {
-            playerName = document.getElementById('player-name').value.trim();
-            if (!playerName) {
-                alert('请输入玩家昵称');
-                return;
+            // 检查必要元素是否存在
+            function checkElements() {
+                const elements = {
+                    playerName: document.getElementById('player-name'),
+                    roomId: document.getElementById('room-id'),
+                    loginView: document.getElementById('login-view'),
+                    roomView: document.getElementById('room-view'),
+                    statusText: document.getElementById('status-text'),
+                    logContent: document.getElementById('log-content')
+                };
+                
+                for (const [key, element] of Object.entries(elements)) {
+                    if (!element) {
+                        console.error(`Missing element: ${key}`);
+                        return false;
+                    }
+                }
+                return true;
             }
             
-            let roomId = document.getElementById('room-id').value.trim();
-            let isCreating = false;
+            // 更新状态文本
+            function updateStatus(text) {
+                const statusElement = document.getElementById('status-text');
+                if (statusElement) {
+                    statusElement.textContent = text;
+                }
+            }
             
-            if (!roomId) {
-                // 创建新房间
+            // 添加日志条目
+            function addLogEntry(message) {
+                const logContent = document.getElementById('log-content');
+                if (!logContent) return;
+                
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                logContent.appendChild(logEntry);
+                
+                // 自动滚动到底部
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+            
+            // 更新玩家列表
+            function updatePlayerList(playerNames) {
+                const playerListEl = document.getElementById('player-list');
+                if (!playerListEl) return;
+                
+                playerListEl.innerHTML = playerNames.map(p => 
+                    `<div class="player-item">${p}</div>`
+                ).join('');
+                
+                players = playerNames;
+            }
+            
+            // 加入或创建房间
+            async function joinOrCreateRoom() {
+                if (!checkElements()) {
+                    updateStatus('页面元素加载异常，请刷新页面');
+                    return;
+                }
+                
+                const playerNameInput = document.getElementById('player-name');
+                const roomIdInput = document.getElementById('room-id');
+                
+                if (!playerNameInput || !roomIdInput) {
+                    console.error('找不到必要的输入元素');
+                    return;
+                }
+                
+                playerName = playerNameInput.value.trim();
+                if (!playerName) {
+                    alert('请输入玩家昵称');
+                    return;
+                }
+                
+                let roomId = roomIdInput.value.trim();
+                let isCreating = false;
+                
+                if (!roomId) {
+                    // 创建新房间
+                    try {
+                        updateStatus('正在创建房间...');
+                        if (typeof SanGuoShaClient !== 'undefined' && typeof SanGuoShaClient.createRoom === 'function') {
+                            const response = await SanGuoShaClient.createRoom(2);
+                            const data = await response.json();
+                            if (data.success) {
+                                roomId = data.room_id;
+                                isCreating = true;
+                                roomIdInput.value = roomId; // 填入新创建的房间ID
+                            } else {
+                                alert('创建房间失败: ' + data.error);
+                                updateStatus('创建房间失败');
+                                return;
+                            }
+                        } else {
+                            alert('客户端未正确加载，请刷新页面');
+                            return;
+                        }
+                    } catch (error) {
+                        alert('网络错误: ' + error.message);
+                        updateStatus('网络错误');
+                        return;
+                    }
+                }
+                
+                // 加入房间
                 try {
-                    updateStatus('正在创建房间...');
-                    const response = await SanGuoShaClient.createRoom(2);
-                    const data = await response.json();
-                    if (data.success) {
-                        roomId = data.room_id;
-                        isCreating = true;
-                        document.getElementById('room-id').value = roomId; // 填入新创建的房间ID
+                    updateStatus('正在加入房间...');
+                    if (typeof SanGuoShaClient !== 'undefined' && typeof SanGuoShaClient.joinRoom === 'function') {
+                        const response = await SanGuoShaClient.joinRoom(roomId, playerName);
+                        const data = await response.json();
+                        if (data.success) {
+                            currentRoomId = roomId;
+                            showRoomView(data.room_info);
+                            
+                            // 连接WebSocket到房间
+                            if (typeof SanGuoShaClient.joinGameRoom === 'function') {
+                                SanGuoShaClient.joinGameRoom(roomId);
+                            }
+                            
+                            if (isCreating) {
+                                updateStatus(`创建房间成功: ${roomId}`);
+                                addLogEntry(`你创建了房间 ${roomId}`);
+                            } else {
+                                updateStatus(`加入房间成功: ${roomId}`);
+                                addLogEntry(`你加入了房间 ${roomId}`);
+                            }
+                        } else {
+                            alert('加入房间失败: ' + data.error);
+                            updateStatus('加入房间失败: ' + data.error);
+                        }
                     } else {
-                        alert('创建房间失败: ' + data.error);
-                        updateStatus('创建房间失败');
+                        alert('客户端未正确加载，请刷新页面');
                         return;
                     }
                 } catch (error) {
                     alert('网络错误: ' + error.message);
-                    updateStatus('网络错误');
-                    return;
+                    updateStatus('网络错误: ' + error.message);
                 }
             }
             
-            // 加入房间
-            try {
-                updateStatus('正在加入房间...');
-                const response = await SanGuoShaClient.joinRoom(roomId, playerName);
-                const data = await response.json();
-                if (data.success) {
-                    currentRoomId = roomId;
-                    showRoomView(data.room_info);
+            // 显示房间视图
+            function showRoomView(roomInfo) {
+                const loginView = document.getElementById('login-view');
+                const roomView = document.getElementById('room-view');
+                
+                if (loginView && roomView) {
+                    loginView.classList.add('hidden');
+                    roomView.classList.remove('hidden');
                     
-                    // 连接WebSocket到房间
-                    SanGuoShaClient.joinGameRoom(roomId);
+                    const currentRoomIdEl = document.getElementById('current-room-id');
+                    const roomStatusEl = document.getElementById('room-status');
                     
-                    if (isCreating) {
-                        updateStatus(`创建房间成功: ${roomId}`);
-                        addLogEntry(`你创建了房间 ${roomId}`);
-                    } else {
-                        updateStatus(`加入房间成功: ${roomId}`);
-                        addLogEntry(`你加入了房间 ${roomId}`);
+                    if (currentRoomIdEl) currentRoomIdEl.textContent = roomInfo.room_id;
+                    if (roomStatusEl) roomStatusEl.textContent = roomInfo.status === 'waiting' ? '等待中' : '游戏中';
+                    
+                    // 更新玩家列表
+                    updatePlayerList(roomInfo.players);
+                }
+            }
+            
+            // 复制房间ID
+            function copyRoomId() {
+                const roomIdEl = document.getElementById('current-room-id');
+                if (!roomIdEl) return;
+                
+                const roomId = roomIdEl.textContent;
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(roomId).then(() => {
+                        updateStatus('房间ID已复制到剪贴板');
+                        setTimeout(() => updateStatus(`已在房间 ${roomId} 中`), 2000);
+                    });
+                }
+            }
+            
+            // 离开房间
+            function leaveRoom() {
+                if (currentRoomId) {
+                    // 通知服务器离开房间
+                    if (typeof SanGuoShaClient.leaveGameRoom === 'function') {
+                        SanGuoShaClient.leaveGameRoom(currentRoomId);
                     }
-                } else {
-                    alert('加入房间失败: ' + data.error);
-                    updateStatus('加入房间失败: ' + data.error);
+                    
+                    currentRoomId = null;
+                    playerName = null;
+                    players = [];
+                    
+                    const roomView = document.getElementById('room-view');
+                    const loginView = document.getElementById('login-view');
+                    
+                    if (roomView && loginView) {
+                        roomView.classList.add('hidden');
+                        loginView.classList.remove('hidden');
+                        
+                        // 清空房间信息
+                        const currentRoomIdEl = document.getElementById('current-room-id');
+                        const roomStatusEl = document.getElementById('room-status');
+                        const playerListEl = document.getElementById('player-list');
+                        
+                        if (currentRoomIdEl) currentRoomIdEl.textContent = '';
+                        if (roomStatusEl) roomStatusEl.textContent = '';
+                        if (playerListEl) playerListEl.innerHTML = '';
+                    }
+                    
+                    updateStatus('已离开房间');
+                    addLogEntry('你已离开房间');
                 }
-            } catch (error) {
-                alert('网络错误: ' + error.message);
-                updateStatus('网络错误: ' + error.message);
             }
-        }
-        
-        // 显示房间视图
-        function showRoomView(roomInfo) {
-            document.getElementById('login-view').classList.add('hidden');
-            document.getElementById('room-view').classList.remove('hidden');
             
-            document.getElementById('current-room-id').textContent = roomInfo.room_id;
-            document.getElementById('room-status').textContent = roomInfo.status === 'waiting' ? '等待中' : '游戏中';
-            
-            // 更新玩家列表
-            updatePlayerList(roomInfo.players);
-        }
-        
-        // 复制房间ID
-        function copyRoomId() {
-            const roomId = document.getElementById('current-room-id').textContent;
-            navigator.clipboard.writeText(roomId).then(() => {
-                updateStatus('房间ID已复制到剪贴板');
-                setTimeout(() => updateStatus(`已在房间 ${roomId} 中`), 2000);
-            });
-        }
-        
-        // 离开房间
-        function leaveRoom() {
-            if (currentRoomId) {
-                // 通知服务器离开房间
-                SanGuoShaClient.leaveGameRoom(currentRoomId);
+            // 事件监听器
+            if (typeof SanGuoShaClient !== 'undefined') {
+                SanGuoShaClient.on('connected', (data) => {
+                    updateStatus('已连接到服务器');
+                    addLogEntry('已连接到三国杀服务器');
+                });
                 
-                currentRoomId = null;
-                playerName = null;
-                players = [];
+                SanGuoShaClient.on('disconnected', (data) => {
+                    updateStatus('与服务器断开连接');
+                    addLogEntry('与服务器断开连接: ' + data.reason);
+                });
                 
-                document.getElementById('room-view').classList.add('hidden');
-                document.getElementById('login-view').classList.remove('hidden');
+                SanGuoShaClient.on('gameStarted', (data) => {
+                    const roomStatusEl = document.getElementById('room-status');
+                    const gameInfoEl = document.getElementById('game-info');
+                    
+                    if (roomStatusEl) roomStatusEl.textContent = '游戏中';
+                    if (gameInfoEl) gameInfoEl.innerHTML = '<p>游戏开始！</p>';
+                    
+                    // 显示对手信息
+                    if (players && gameInfoEl) {
+                        const opponentsHtml = players
+                            .filter(name => name !== playerName)
+                            .map(name => `<div class="player-item">对手: ${name}</div>`)
+                            .join('');
+                        document.getElementById('opponents-display').innerHTML = opponentsHtml || '<p>暂无对手</p>';
+                    }
+                    
+                    updateStatus('游戏开始！');
+                    addLogEntry('游戏开始！');
+                });
                 
-                // 清空房间信息
-                document.getElementById('current-room-id').textContent = '';
-                document.getElementById('room-status').textContent = '';
-                document.getElementById('player-list').innerHTML = '';
-                
-                updateStatus('已离开房间');
-                addLogEntry('你已离开房间');
+                SanGuoShaClient.on('playerJoined', (data) => {
+                    updatePlayerList(data.players);
+                    
+                    const roomStatusEl = document.getElementById('room-status');
+                    if (roomStatusEl) {
+                        roomStatusEl.textContent = data.players.length === 2 ? '准备开始' : '等待中';
+                    }
+                    
+                    addLogEntry(`${data.player_name} 加入了房间`);
+                    
+                    if (data.players.length === 2) {
+                        if (roomStatusEl) roomStatusEl.textContent = '准备开始';
+                        addLogEntry('房间已满，准备开始游戏');
+                    }
+                });
             }
-        }
-        
-        // 事件监听器
-        SanGuoShaClient.on('connected', (data) => {
-            updateStatus('已连接到服务器');
-            addLogEntry('已连接到三国杀服务器');
-        });
-        
-        SanGuoShaClient.on('disconnected', (data) => {
-            updateStatus('与服务器断开连接');
-            addLogEntry('与服务器断开连接: ' + data.reason);
-        });
-        
-        SanGuoShaClient.on('gameStarted', (data) => {
-            document.getElementById('room-status').textContent = '游戏中';
-            document.getElementById('game-info').innerHTML = '<p>游戏开始！</p>';
             
-            // 显示对手信息
-            const opponentsHtml = data.players
-                .filter(name => name !== playerName)
-                .map(name => `<div class="player-item">对手: ${name}</div>`)
-                .join('');
-            document.getElementById('opponents-display').innerHTML = opponentsHtml || '<p>暂无对手</p>';
-            
-            updateStatus('游戏开始！');
-            addLogEntry('游戏开始！');
-        });
-        
-        SanGuoShaClient.on('playerJoined', (data) => {
-            updatePlayerList(data.players);
-            document.getElementById('room-status').textContent = data.players.length === 2 ? '准备开始' : '等待中';
-            addLogEntry(`${data.player_name} 加入了房间`);
-            
-            if (data.players.length === 2) {
-                document.getElementById('room-status').textContent = '准备开始';
-                addLogEntry('房间已满，准备开始游戏');
+            // 确保按钮事件绑定
+            const joinButton = document.querySelector('button[onclick="joinOrCreateRoom()"]');
+            if (joinButton) {
+                // 移除旧的onclick事件，重新绑定
+                joinButton.onclick = function() {
+                    joinOrCreateRoom();
+                };
             }
-        });
-        
-        // 页面加载完成后初始化
-        window.onload = function() {
+            
+            const copyButton = document.querySelector('button[onclick="copyRoomId()"]');
+            if (copyButton) {
+                copyButton.onclick = function() {
+                    copyRoomId();
+                };
+            }
+            
+            const leaveButton = document.querySelector('button[onclick="leaveRoom()"]');
+            if (leaveButton) {
+                leaveButton.onclick = function() {
+                    leaveRoom();
+                };
+            }
+            
+            // 页面初始化
             updateStatus('准备就绪，可以加入游戏');
             addLogEntry('欢迎来到三国杀Online');
-        };
+            
+            // 检查客户端是否加载成功
+            if (typeof SanGuoShaClient === 'undefined') {
+                updateStatus('客户端未正确加载，请刷新页面');
+                console.error('SanGuoShaClient未定义');
+            } else if (typeof SanGuoShaClient.joinRoom === 'undefined') {
+                updateStatus('客户端方法未正确加载，请刷新页面');
+                console.error('SanGuoShaClient.joinRoom未定义');
+            }
+        });
     </script>
 </body>
 </html>
