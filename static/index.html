@@ -195,6 +195,17 @@
                 <div class="hand-cards">
                     <h3>你的手牌</h3>
                     <div id="hand-cards-display">尚未开始游戏</div>
+                    <div id="game-actions" class="hidden">
+                        <h4>游戏操作</h4>
+                        <button id="draw-card-btn">摸牌</button>
+                        <button id="end-turn-btn">结束回合</button>
+                    </div>
+                </div>
+                
+                <div id="game-phase-info">
+                    <h3>游戏阶段</h3>
+                    <p>当前玩家: <span id="current-player">-</span></p>
+                    <p>当前回合: <span id="current-round">-</span></p>
                 </div>
                 
                 <div id="game-log">
@@ -217,6 +228,8 @@
         let playerName = null;
         let players = [];
         let isConnected = false;
+        let gameState = null;
+        let currentPlayer = null;
         
         // 初始化Socket.IO连接
         function initSocket() {
@@ -247,14 +260,32 @@
             socket.on('game_start', (data) => {
                 currentRoomId = data.room_id;
                 document.getElementById('room-status').textContent = '游戏中';
-                document.getElementById('game-info').innerHTML = '<p>游戏开始！</p>';
+                
+                // 更新游戏信息
+                const gameInfo = document.getElementById('game-info');
+                if (gameInfo) {
+                    gameInfo.innerHTML = '<p>游戏正在进行中</p>';
+                }
                 
                 // 显示对手信息
-                const opponentsHtml = data.players
-                    .filter(name => name !== playerName)
-                    .map(name => `<div class="player-item">对手: ${name}</div>`)
-                    .join('');
-                document.getElementById('opponents-display').innerHTML = opponentsHtml || '<p>暂无对手</p>';
+                const opponentsDisplay = document.getElementById('opponents-display');
+                if (opponentsDisplay) {
+                    const alivePlayers = data.players.filter(p => p.name !== playerName && p.is_alive !== false);
+                    const opponentsHtml = alivePlayers.map(p => `
+                        <div class="player-item">
+                            ${p.name} (${p.character}) - HP: ${p.hp}/${p.max_hp} - 手牌: ${p.hand_card_count}张
+                        </div>
+                    `).join('');
+                    opponentsDisplay.innerHTML = opponentsHtml || '<p>暂无对手</p>';
+                }
+                
+                // 显示当前玩家和回合
+                if (data.current_player) {
+                    document.getElementById('current-player').textContent = data.current_player;
+                }
+                
+                // 显示游戏动作按钮
+                document.getElementById('game-actions').classList.remove('hidden');
                 
                 updateStatus('游戏开始！');
                 addLogEntry('游戏开始！');
@@ -277,6 +308,32 @@
             
             socket.on('connected', (data) => {
                 console.log('服务器连接确认:', data.msg);
+            });
+            
+            // 监听出牌事件
+            socket.on('card_played', (data) => {
+                let msg = '';
+                if (data.action === 'attack') {
+                    msg = `${data.player} 对 ${data.target} 使用了【${data.card.name}】`;
+                } else if (data.action === 'dodge') {
+                    msg = `${data.player} 使用了【${data.card.name}】进行闪避`;
+                } else if (data.action === 'peach') {
+                    msg = `${data.player} 使用了【${data.card.name}】，体力恢复至 ${data.new_hp}`;
+                }
+                
+                addLogEntry(msg);
+            });
+            
+            // 监听摸牌事件
+            socket.on('card_drawn', (data) => {
+                addLogEntry(`${data.player} 摸了 ${data.count} 张牌，当前手牌数: ${data.hand_card_count}`);
+            });
+            
+            // 监听回合切换事件
+            socket.on('turn_changed', (data) => {
+                document.getElementById('current-player').textContent = data.current_player;
+                document.getElementById('current-round').textContent = data.round;
+                addLogEntry(`回合切换到 ${data.current_player}，第 ${data.round} 回合`);
             });
         }
         
@@ -465,6 +522,49 @@
             }
         }
         
+        // 发送游戏动作
+        async function sendGameAction(action, card = null, target = null) {
+            if (!currentRoomId || !playerName) {
+                alert('请先加入房间');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/game/action', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        room_id: currentRoomId,
+                        action: action,
+                        player_name: playerName,
+                        card: card,
+                        target: target
+                    })
+                });
+                
+                const data = await response.json();
+                if (!data.success) {
+                    alert('操作失败: ' + data.error);
+                } else {
+                    addLogEntry(data.message || `执行了${action}操作`);
+                }
+            } catch (error) {
+                alert('网络错误: ' + error.message);
+            }
+        }
+        
+        // 摸牌操作
+        function drawCards() {
+            sendGameAction('draw_card');
+        }
+        
+        // 结束回合
+        function endTurn() {
+            sendGameAction('end_turn');
+        }
+        
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
             // 初始化Socket.IO
@@ -474,6 +574,8 @@
             document.getElementById('join-button').addEventListener('click', joinOrCreateRoom);
             document.getElementById('copy-btn').addEventListener('click', copyRoomId);
             document.getElementById('leave-btn').addEventListener('click', leaveRoom);
+            document.getElementById('draw-card-btn').addEventListener('click', drawCards);
+            document.getElementById('end-turn-btn').addEventListener('click', endTurn);
             
             updateStatus('准备就绪，可以加入游戏');
             addLogEntry('欢迎来到三国杀Online');
