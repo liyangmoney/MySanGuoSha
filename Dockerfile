@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # 复制项目文件到工作目录
-COPY sanguosha-python/server/requirements.txt /app/requirements.txt
+COPY requirements.txt /app/requirements.txt
 
 # 安装依赖
 RUN pip install --no-cache-dir -r requirements.txt
@@ -18,11 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制整个项目
 COPY . /app/
 
-# 设置Python路径
-ENV PYTHONPATH=/app:/app/sanguosha-python
-
 # 暴露端口
 EXPOSE 5000
 
-# 启动命令 - 直接运行app.py，利用内置的eventlet支持
-CMD ["python", "/app/sanguosha-python/server/app.py"]
+# 启动命令 - 使用eventlet运行app.py
+CMD ["python", "app.py"]
