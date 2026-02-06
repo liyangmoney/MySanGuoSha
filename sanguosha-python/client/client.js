@@ -2,18 +2,23 @@
  * 三国杀客户端Socket.IO通信模块
  */
 class SanGuoShaClient {
-    constructor(serverUrl) {
-        this.serverUrl = serverUrl;
+    constructor() {
         this.socket = null;
         this.isConnected = false;
         this.eventHandlers = {};
         this.currentRoomId = null;
         this.playerName = null;
+        
+        // 根据当前环境确定服务器URL
+        this.serverUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ?
+            'http://localhost:5000' :
+            window.location.protocol + '//' + window.location.hostname + (window.location.port ? ':' + window.location.port : '');
     }
 
     connect() {
         this.socket = io(this.serverUrl, {
-            transports: ['websocket', 'polling']
+            transports: ['websocket', 'polling'],
+            withCredentials: false
         });
 
         this.socket.on('connect', () => {
@@ -36,6 +41,14 @@ class SanGuoShaClient {
 
         this.socket.on('player_joined', (data) => {
             this._triggerEvent('playerJoined', data);
+        });
+
+        this.socket.on('joined_room', (data) => {
+            this._triggerEvent('joinedRoom', data);
+        });
+
+        this.socket.on('connected', (data) => {
+            this._triggerEvent('serverConnected', data);
         });
 
         this.socket.on('player_left', (data) => {
@@ -81,34 +94,52 @@ class SanGuoShaClient {
     /**
      * 创建房间
      */
-    createRoom(maxPlayers = 2) {
-        return fetch('/api/create_room', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ max_players: maxPlayers })
-        });
+    async createRoom(maxPlayers = 2) {
+        try {
+            const response = await fetch('/api/create_room', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ max_players: maxPlayers })
+            });
+            return response;
+        } catch (error) {
+            console.error('创建房间时发生错误:', error);
+            throw error;
+        }
     }
 
     /**
      * 加入房间
      */
-    joinRoom(roomId, playerName) {
-        return fetch(`/api/join_room/${roomId}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ player_name: playerName })
-        });
+    async joinRoom(roomId, playerName) {
+        try {
+            const response = await fetch(`/api/join_room/${roomId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ player_name: playerName })
+            });
+            return response;
+        } catch (error) {
+            console.error('加入房间时发生错误:', error);
+            throw error;
+        }
     }
 
     /**
      * 获取房间信息
      */
-    getRoomInfo(roomId) {
-        return fetch(`/api/rooms/${roomId}`);
+    async getRoomInfo(roomId) {
+        try {
+            const response = await fetch(`/api/rooms/${roomId}`);
+            return response;
+        } catch (error) {
+            console.error('获取房间信息时发生错误:', error);
+            throw error;
+        }
     }
 
     /**
@@ -142,11 +173,7 @@ class SanGuoShaClient {
 }
 
 // 全局客户端实例
-const sgsClient = new SanGuoShaClient(
-    window.location.hostname === 'localhost' ? 
-    'http://localhost:5000' : 
-    window.location.protocol + '//' + window.location.hostname + (window.location.port ? ':' + window.location.port : '')
-);
+const sgsClient = new SanGuoShaClient();
 
 // 初始化
 sgsClient.connect();
