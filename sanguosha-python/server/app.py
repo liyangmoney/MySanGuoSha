@@ -70,6 +70,11 @@ def join_room_api(room_id):
     if not player_name:
         return jsonify({'success': False, 'error': '玩家名称不能为空'})
     
+    # 检查玩家名称是否已存在
+    for player in room['players']:
+        if player.name == player_name:
+            return jsonify({'success': False, 'error': '该玩家名称已被使用'})
+    
     # 创建玩家
     player = Player(player_name)
     player.character = ExampleCharacter()
@@ -79,10 +84,20 @@ def join_room_api(room_id):
     room['players'].append(player)
     room['game'].add_player(player)
     
+    # 通知房间内所有玩家有新玩家加入
+    socketio.emit('player_joined', {
+        'player_name': player_name,
+        'players': [p.name for p in room['players']],
+        'room_id': room_id
+    }, room=room_id)
+    
     # 如果达到最大玩家数，自动开始游戏
     if len(room['players']) == room['max_players']:
         room['status'] = 'running'
-        socketio.emit('game_start', {'players': [p.name for p in room['players']], 'room_id': room_id}, room=room_id)
+        socketio.emit('game_start', {
+            'players': [p.name for p in room['players']], 
+            'room_id': room_id
+        }, room=room_id)
     
     return jsonify({
         'success': True,

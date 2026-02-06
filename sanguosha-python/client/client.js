@@ -7,6 +7,8 @@ class SanGuoShaClient {
         this.socket = null;
         this.isConnected = false;
         this.eventHandlers = {};
+        this.currentRoomId = null;
+        this.playerName = null;
     }
 
     connect() {
@@ -28,6 +30,7 @@ class SanGuoShaClient {
 
         // 监听游戏事件
         this.socket.on('game_start', (data) => {
+            this.currentRoomId = data.room_id;
             this._triggerEvent('gameStarted', data);
         });
 
@@ -102,6 +105,13 @@ class SanGuoShaClient {
     }
 
     /**
+     * 获取房间信息
+     */
+    getRoomInfo(roomId) {
+        return fetch(`/api/rooms/${roomId}`);
+    }
+
+    /**
      * 发送游戏动作
      */
     sendAction(actionData) {
@@ -115,6 +125,7 @@ class SanGuoShaClient {
      */
     joinGameRoom(roomId) {
         if (this.socket && this.isConnected) {
+            this.currentRoomId = roomId;
             this.socket.emit('join_game', { room_id: roomId });
         }
     }
@@ -125,6 +136,7 @@ class SanGuoShaClient {
     leaveGameRoom(roomId) {
         if (this.socket && this.isConnected) {
             this.socket.emit('leave_game', { room_id: roomId });
+            this.currentRoomId = null;
         }
     }
 }
@@ -133,7 +145,7 @@ class SanGuoShaClient {
 const sgsClient = new SanGuoShaClient(
     window.location.hostname === 'localhost' ? 
     'http://localhost:5000' : 
-    'https://' + window.location.hostname + ':5000'
+    window.location.protocol + '//' + window.location.hostname + (window.location.port ? ':' + window.location.port : '')
 );
 
 // 初始化
